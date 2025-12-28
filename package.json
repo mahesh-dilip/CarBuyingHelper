@@ -9,9 +9,23 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.1",
+    "@ai-sdk/react": "^3.0.3",
+    "@mastra/ai-sdk": "^0.3.3",
+    "@mastra/core": "^0.24.9",
+    "@react-pdf/renderer": "^4.3.1",
+    "@supabase/supabase-js": "^2.89.0",
+    "ai": "^6.0.3",
+    "date-fns": "^4.1.0",
+    "exa-js": "^2.0.12",
     "next": "16.1.1",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "react-markdown": "^10.1.0",
+    "react-pdf": "^10.2.0",
+    "rehype-raw": "^7.0.0",
+    "remark-gfm": "^4.0.1",
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -20,6 +34,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
+    "pg": "^8.16.3",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
