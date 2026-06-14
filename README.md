@@ -1,248 +1,110 @@
-# CarMind - AI Car Buying Advisor
+# CarMind — AI car-buying advisor for the UK
 
-CarMind is an AI-powered car buying advisor that helps UK enthusiasts find the right car for their budget and preferences. It combines conversational financial planning with deep research on ownership costs, maintenance realities, and market pricing.
+A conversational advisor that helps UK car buyers work out what they can actually afford, then researches the real cost of owning a specific car — purchase price, insurance, tax, fuel and maintenance — and turns it into a month-by-month savings plan.
 
-## Features
+CarMind pairs a tool-calling Claude agent with two hand-written domain models: a UK take-home-pay/affordability calculator (`lib/models/budget.ts`) and an actuarial-style insurance estimator (`lib/models/insurance.ts`). Instead of asking an LLM to guess at numbers, the agent calls these deterministic models for the maths and uses Exa semantic search to ground prices and reliability reports in real UK listings and owner forums. The result is advice that's honest about affordability rather than optimistic.
 
-- **Financial Intake**: Understands your income, expenses, and savings
-- **Smart Recommendations**: AI-powered car suggestions based on budget and preferences
-- **Deep Research**: Real market prices, owner experiences, and running cost analysis
-- **Insurance Estimation**: Accurate UK insurance premium estimates
-- **Budget Planning**: Month-by-month savings plans to reach your car goals
-- **PDF Export**: Download your complete budget plan
+<!-- SCREENSHOTS -->
 
-## Tech Stack
+## Architecture
 
-- **Frontend**: Next.js 16, React 19, Tailwind CSS
-- **AI**: Claude Sonnet 4.5 (Anthropic), Mastra Framework, Vercel AI SDK
-- **Search**: Exa API (semantic web search)
-- **Data**: DVLA VES API (UK vehicle data), Supabase (PostgreSQL)
-- **Deployment**: Vercel (edge functions, streaming)
+```mermaid
+flowchart TD
+    UI["Chat UI<br/>(Next.js / React, AI SDK useChat)"] -->|"POST /api/chat<br/>streaming"| Route["Chat route<br/>app/api/chat/route.ts"]
+    Route -->|"streamText + tools"| Agent["Tool-calling agent<br/>Claude via @ai-sdk/anthropic"]
 
-## Getting Started
+    Agent -->|"tool call"| T1["searchCarPrices"]
+    Agent -->|"tool call"| T2["searchOwnerExperiences"]
+    Agent -->|"tool call"| T3["estimateInsurance"]
+    Agent -->|"tool call"| T4["calculateBudget"]
 
-### Prerequisites
+    T1 --> Exa["Exa semantic search<br/>lib/utils/exa.ts"]
+    T2 --> Exa
+    T3 --> Ins["Insurance model<br/>lib/models/insurance.ts"]
+    T4 --> Bud["Budget model<br/>lib/models/budget.ts"]
 
-- Node.js 18+
-- npm/yarn/pnpm
-- API keys for:
-  - Anthropic Claude
-  - Exa Search
-  - DVLA VES (UK Government)
-  - Supabase
+    Exa -.-> Web["AutoTrader / PistonHeads /<br/>eBay / forums"]
 
-### Installation
+    Route -->|"persist messages + state"| DB["Supabase / Postgres<br/>lib/db/supabase.ts"]
+    DB --> Export["Budget-plan export<br/>app/api/export/.../budget-plan"]
 
-1. Clone the repository:
-```bash
-git clone <your-repo-url>
-cd carmind
+    classDef model fill:#1f6feb,stroke:#0b3d91,color:#fff;
+    classDef ext fill:#2da44e,stroke:#1a7f37,color:#fff;
+    class Ins,Bud model;
+    class Exa,Web,DB ext;
 ```
 
-2. Install dependencies:
+## How it works
+
+The chat endpoint (`app/api/chat/route.ts`) runs a tool-calling loop with Claude through the Vercel AI SDK (`streamText` + `@ai-sdk/anthropic`). A stateful system prompt (`lib/prompts/advisor-prompt.ts`) walks the user through six phases — financial intake → preferences → reality check → car suggestions → deep research → budget plan — and the agent decides when to call each tool.
+
+Four tools are wired into the agent (`lib/utils/ai-tools.ts`, Zod-typed):
+
+- **`calculateBudget`** → `lib/models/budget.ts`. The differentiator. A hand-written UK affordability model: `calculateTakeHome()` applies the 2024/25 income-tax bands (personal allowance, 20/40/45% rates) and Class 1 employee National Insurance (12% / 2% bands) to derive net pay; the budget logic then sizes a 3-month emergency fund, computes disposable income, and works out a maximum sensible purchase price and months-to-ready. No LLM guesswork — it's deterministic arithmetic.
+- **`estimateInsurance`** → `lib/models/insurance.ts`. The other differentiator. A multiplicative premium model over a national base premium, combining hand-tuned multipliers for driver age (17 → 66+), insurance group (1–50), UK location (London / major city / urban / rural, derived from postcode area), No-Claims-Bonus years, and annual mileage. Ships with an insurance-group lookup table for ~30 common enthusiast cars (MX-5, E46, GT86, Fiesta ST, Type R, Boxster, Golf GTI, etc.) and returns a low/mid/high range plus per-factor explanations and a confidence score.
+- **`searchCarPrices`** → `lib/utils/exa.ts`. Exa semantic search restricted to UK automotive domains (AutoTrader, PistonHeads, eBay, CarGurus, Motors), with regex price extraction to build a low/median/high range.
+- **`searchOwnerExperiences`** → `lib/utils/exa.ts`. Exa search across owner forums and communities for reliability reports and common problems, deduplicated by URL.
+
+Sessions and conversation history are persisted to Postgres via Supabase (`lib/db/supabase.ts`, schema in `supabase/migrations/`). A separate research route (`app/api/research/[carId]`) composes the price + ownership + insurance lookups into a running-cost breakdown, and an export route (`app/api/export/[sessionId]/budget-plan`) returns the finished plan as structured JSON for client-side PDF rendering.
+
+> **Status note:** This is a working prototype, not a finished product. The chat loop, both domain models and the Exa tools are implemented and the budget/insurance maths is genuinely usable. A DVLA Vehicle Enquiry Service client (`lib/utils/dvla.ts`) and a month-by-month plan generator (`generateBudgetPlan` in `budget.ts`) are written but not yet wired into the agent's tool set. There are also a couple of known type errors that block `next build` — see [`docs/STATUS.md`](docs/STATUS.md).
+
+## Tech stack
+
+- **Framework:** Next.js 16 (App Router, edge runtime, Turbopack), React 19, TypeScript 5
+- **AI:** Claude via `@ai-sdk/anthropic`, orchestrated with the Vercel AI SDK (`ai`, `@ai-sdk/react`); `@mastra/core` is present as a dependency
+- **Search:** Exa (`exa-js`) semantic web search
+- **Vehicle data:** DVLA Vehicle Enquiry Service (REST, client implemented)
+- **Data:** Supabase / Postgres (`@supabase/supabase-js`)
+- **UI:** Tailwind CSS 4, `react-markdown` + `remark-gfm`, Zustand
+- **PDF:** `@react-pdf/renderer` (client-side)
+
+## Local setup
+
+**Prerequisites:** Node.js 18+, and API keys for Anthropic, Exa, DVLA VES and a Supabase project.
+
 ```bash
+git clone https://github.com/mahesh-dilip/CarBuyingHelper.git
+cd CarBuyingHelper
 npm install
+
+cp .env.example .env.local   # then fill in your keys
 ```
 
-3. Set up environment variables:
+Set up the database — create a Supabase project and run the migration in `supabase/migrations/20241228_init_schema.sql` (paste it into the Supabase SQL editor, or `npx supabase db push`).
 
-Copy `.env.example` to `.env.local` and fill in your API keys:
+Run it:
 
 ```bash
-cp .env.example .env.local
+npm run dev      # http://localhost:3000
 ```
 
-Required environment variables:
-```
-ANTHROPIC_API_KEY=your_anthropic_api_key
-EXA_API_KEY=your_exa_api_key
-DVLA_API_KEY=your_dvla_api_key
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_key
-```
+Environment variables (see `.env.example` for the full list): `ANTHROPIC_API_KEY`, `EXA_API_KEY`, `DVLA_API_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
 
-### Database Setup
-
-1. Create a new Supabase project at [supabase.com](https://supabase.com)
-
-2. Run the migration SQL:
-```bash
-# Copy the contents of supabase/migrations/20241228_init_schema.sql
-# and run it in the Supabase SQL Editor
-```
-
-Or use the Supabase CLI:
-```bash
-npx supabase db push
-```
-
-### Development
-
-Run the development server:
-
-```bash
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-## API Keys Setup
-
-### 1. Anthropic (Claude)
-
-1. Sign up at [console.anthropic.com](https://console.anthropic.com)
-2. Create an API key
-3. Add to `.env.local` as `ANTHROPIC_API_KEY`
-
-### 2. Exa Search
-
-1. Sign up at [exa.ai](https://exa.ai)
-2. Get your API key from the dashboard
-3. Add to `.env.local` as `EXA_API_KEY`
-4. Note: Exa offers $10 free credit to start
-
-### 3. DVLA VES API
-
-1. Register at [developer-portal.driver-vehicle-licensing.api.gov.uk](https://developer-portal.driver-vehicle-licensing.api.gov.uk)
-2. Subscribe to the Vehicle Enquiry Service API
-3. Add to `.env.local` as `DVLA_API_KEY`
-
-### 4. Supabase
-
-1. Create project at [supabase.com](https://supabase.com)
-2. Get your project URL and keys from Settings > API
-3. Add all three keys to `.env.local`
-
-## Project Structure
+## Project structure
 
 ```
-carmind/
-├── app/                          # Next.js app router
-│   ├── api/                      # API routes
-│   │   ├── chat/                 # Chat endpoint (streaming)
-│   │   ├── session/              # Session management
-│   │   ├── research/             # Car research endpoint
-│   │   └── export/               # PDF export
-│   ├── layout.tsx                # Root layout
-│   └── page.tsx                  # Main page
-├── components/                   # React components
-│   ├── chat/                     # Chat UI components
-│   └── ui/                       # Reusable UI components
-├── lib/                          # Core logic
-│   ├── db/                       # Database utilities
-│   ├── mastra/                   # Agent & tools
-│   ├── models/                   # Calculation models
-│   └── utils/                    # Helper functions
-├── types/                        # TypeScript types
-└── supabase/                     # Database migrations
+app/
+  api/
+    chat/                  # streaming tool-calling chat loop
+    session/               # session create / get / update
+    research/[carId]/      # composes price + ownership + insurance
+    export/[sessionId]/    # budget-plan JSON for PDF export
+components/chat/           # chat UI
+lib/
+  models/
+    budget.ts              # UK tax/NI + affordability model
+    insurance.ts           # premium multipliers + group table
+  utils/
+    exa.ts                 # Exa search wrappers
+    dvla.ts                # DVLA VES client
+    ai-tools.ts            # Zod-typed agent tool definitions
+  prompts/advisor-prompt.ts
+  db/supabase.ts
+types/index.ts
+supabase/migrations/
 ```
-
-## Key Components
-
-### Mastra Agent
-
-The CarMind agent orchestrates the conversation flow and uses specialized tools:
-
-- `searchCarPrices` - Search UK market prices
-- `searchOwnerExperiences` - Find owner reviews and reliability info
-- `lookupVehicleData` - DVLA vehicle lookup
-- `estimateInsurance` - Calculate insurance premiums
-- `calculateBudget` - Determine affordability
-- `generateBudgetPlan` - Create savings timeline
-
-### Insurance Model
-
-Estimates UK car insurance based on:
-- Driver age
-- Insurance group (1-50)
-- Location (postcode)
-- No Claims Bonus (NCB)
-- Annual mileage
-
-### Budget Calculator
-
-Calculates:
-- Emergency fund requirements
-- Maximum car purchase price
-- Monthly running cost budget
-- Months until purchase-ready
-
-## Deployment
-
-### Deploy to Vercel
-
-1. Push code to GitHub
-
-2. Import project to Vercel:
-```bash
-vercel
-```
-
-3. Add environment variables in Vercel dashboard
-
-4. Deploy!
-
-The app uses Edge Functions for optimal performance.
-
-### Database Migration
-
-Ensure your Supabase migrations are applied before deployment:
-
-```bash
-npx supabase db push
-```
-
-## Usage
-
-1. **Start a Session**: Visit the homepage to begin
-2. **Financial Intake**: Answer questions about your income and expenses
-3. **Preferences**: Describe your ideal car and driving style
-4. **Get Suggestions**: Receive AI-matched car recommendations
-5. **Deep Research**: Select cars to research in detail
-6. **Budget Plan**: Get a month-by-month savings plan
-7. **Export**: Download your plan as PDF
-
-## Development Roadmap
-
-- [x] Financial intake & budget calculation
-- [x] Car suggestions with Claude Sonnet 4.5
-- [x] Deep research with Exa search
-- [x] Insurance estimation model
-- [x] Budget plan generation
-- [x] PDF export
-- [ ] Enhanced comparison view
-- [ ] Appreciation predictions (v2)
-- [ ] Finance calculator (PCP/HP)
-- [ ] Email notifications
-- [ ] Mobile native app
-
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
 
 ## License
 
-[Your chosen license]
-
-## Support
-
-For issues and questions:
-- Open an issue on GitHub
-- Email: [your email]
-
-## Acknowledgments
-
-- Built with [Mastra](https://mastra.ai) and [Vercel AI SDK](https://sdk.vercel.ai)
-- Powered by [Claude](https://anthropic.com) and [Exa](https://exa.ai)
-- UK vehicle data from [DVLA](https://www.gov.uk/dvla)
-
----
-
-Made with ❤️ for UK car enthusiasts
+No license specified yet — all rights reserved by default. Add a `LICENSE` file before reuse.
