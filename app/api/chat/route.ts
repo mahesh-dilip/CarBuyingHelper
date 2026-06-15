@@ -3,10 +3,10 @@
  * Handles streaming conversation with the CarMind agent
  */
 
-import { streamText, convertToModelMessages, UIMessage } from 'ai';
+import { streamText, convertToModelMessages, stepCountIs, UIMessage } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { ADVISOR_SYSTEM_PROMPT } from '@/lib/prompts/advisor-prompt';
-import { getSession, updateSession, addMessage } from '@/lib/db/supabase';
+import { getSession, addMessage } from '@/lib/db/supabase';
 import { aiTools } from '@/lib/utils/ai-tools';
 
 export const runtime = 'edge';
@@ -41,7 +41,7 @@ export async function POST(req: Request) {
       system: systemPrompt,
       messages: modelMessages,
       tools: aiTools,
-      maxSteps: 5, // Allow multi-step tool execution in single turn
+      stopWhen: stepCountIs(5), // Allow multi-step tool execution in single turn
       onStepFinish: ({ toolCalls, toolResults }) => {
         if (toolCalls && toolCalls.length > 0) {
           console.log('[Chat API] Tool calls:', JSON.stringify(toolCalls, null, 2));
@@ -76,10 +76,8 @@ export async function POST(req: Request) {
           content: text,
         });
 
-        // Update session timestamp
-        await updateSession(sessionId, {
-          updated_at: new Date().toISOString(),
-        });
+        // Note: user_sessions.updated_at is maintained automatically by the
+        // `update_user_sessions_updated_at` DB trigger, so no manual touch needed.
       },
     });
 

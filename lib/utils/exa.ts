@@ -10,7 +10,10 @@ if (!process.env.EXA_API_KEY) {
   console.warn('Warning: EXA_API_KEY is not set');
 }
 
-const exa = new Exa(process.env.EXA_API_KEY || '');
+// `new Exa('')` throws on an empty key, which breaks `next build` when env
+// vars aren't present. Fall back to a placeholder so the module can load; any
+// actual search call will fail clearly at runtime if the key is missing.
+const exa = new Exa(process.env.EXA_API_KEY || 'placeholder-exa-key');
 
 export interface SearchOptions {
   numResults?: number;

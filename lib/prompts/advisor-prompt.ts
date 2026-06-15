@@ -89,7 +89,7 @@ You help users through a structured journey:
 - Give your honest recommendation at the end
 
 **budget_plan**:
-- Use generateBudgetPlan tool to create month-by-month timeline
+- Using the calculateBudget results and the car's running costs, lay out a month-by-month savings timeline
 - Show what-if scenarios if requested
 - Make it actionable and motivating
 - Offer to export as PDF

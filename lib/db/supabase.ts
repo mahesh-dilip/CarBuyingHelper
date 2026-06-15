@@ -13,7 +13,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('Warning: Supabase credentials not configured');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// `createClient` throws on an empty URL, which breaks `next build` when env
+// vars aren't present (e.g. CI). Fall back to a placeholder so the module can
+// load; any actual query will fail clearly at runtime if creds are missing.
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-anon-key'
+);
 
 /**
  * Create a new user session
