@@ -90,7 +90,12 @@ export function calculateBudget(params: CalculateBudgetParams): Budget {
 
   // Emergency fund calculation
   const emergencyFundTarget = monthlyExpenses * 3; // 3 months of essential expenses
-  const emergencyFundMonths = currentSavings / monthlyExpenses;
+  // Guard division by zero: with no monthly expenses there is nothing to cover,
+  // so the emergency fund is trivially fully funded (avoids 0/0 = NaN, which
+  // would otherwise propagate through maxPurchasePrice via Math.max(2000, NaN)).
+  const emergencyFundMonths = monthlyExpenses > 0
+    ? currentSavings / monthlyExpenses
+    : Infinity;
 
   let emergencyFundStatus: EmergencyFundStatus = 'none';
   if (emergencyFundMonths >= 3) {
@@ -145,6 +150,11 @@ export function calculateBudget(params: CalculateBudgetParams): Budget {
     if (availableNow >= 3000) {
       maxPurchasePrice = Math.round(availableNow);
       monthsToReady = 0;
+    } else if (monthlySavings <= 0) {
+      // No disposable income to save: can only spend what's available now.
+      // Guards against ceil(x / 0) = Infinity and the resulting NaN price.
+      monthsToReady = 0;
+      maxPurchasePrice = Math.round(availableNow);
     } else {
       const targetCarBudget = 4000;
       monthsToReady = Math.ceil((targetCarBudget - availableNow) / monthlySavings);

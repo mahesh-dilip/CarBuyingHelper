@@ -135,10 +135,10 @@ describe('calculateBudget', () => {
     expect(b.maxMonthlyRunning).toBe(Math.round(b.monthlyDisposable * 0.3));
   });
 
-  it('produces NaN when income and expenses are all zero (documents division-by-zero edge)', () => {
-    // KNOWN GAP: with monthlyExpenses === 0 the emergency-fund month count is
-    // ceil(0/0) = NaN, which propagates into maxPurchasePrice. The £2000 floor
-    // does NOT rescue this because Math.max(2000, NaN) === NaN.
+  it('returns coherent values (no NaN) when income and expenses are all zero', () => {
+    // With monthlyExpenses === 0 there is nothing to cover, so the emergency
+    // fund is treated as fully funded and maxPurchasePrice falls back to the
+    // £2000 floor rather than NaN (Math.max(2000, NaN) used to leak NaN).
     const b = calculateBudget({
       monthlyIncome: 0,
       rent: 0,
@@ -148,6 +148,40 @@ describe('calculateBudget', () => {
       investmentGoal: 0,
       currentSavings: 0,
     });
-    expect(Number.isNaN(b.maxPurchasePrice)).toBe(true);
+    expect(Number.isNaN(b.maxPurchasePrice)).toBe(false);
+    expect(b.maxPurchasePrice).toBe(2000); // floor applies
+    expect(b.emergencyFundStatus).toBe('complete'); // no expenses -> nothing to fund
+    expect(b.emergencyFundTarget).toBe(0);
+    expect(b.monthsToReady).toBe(0);
+    expect(b.monthlyDisposable).toBe(0);
+    // every numeric field is finite
+    for (const v of [
+      b.maxPurchasePrice,
+      b.recommendedPurchasePrice,
+      b.maxMonthlyRunning,
+      b.recommendedMonthlyRunning,
+      b.monthsToReady,
+      b.monthlyDisposable,
+      b.monthlyExpenses,
+      b.emergencyFundTarget,
+    ]) {
+      expect(Number.isFinite(v)).toBe(true);
+    }
+  });
+
+  it('handles zero expenses with positive savings (uses available savings)', () => {
+    // expenses 0 -> complete; availableNow = max(0, 8000 - 0 - 1000) = 7000 (>=3000)
+    const b = calculateBudget({
+      monthlyIncome: 3000,
+      rent: 0,
+      bills: 0,
+      livingExpenses: 0,
+      savingsGoal: 0,
+      investmentGoal: 0,
+      currentSavings: 8000,
+    });
+    expect(b.emergencyFundStatus).toBe('complete');
+    expect(b.maxPurchasePrice).toBe(7000);
+    expect(b.monthsToReady).toBe(0);
   });
 });
