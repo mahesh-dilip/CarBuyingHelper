@@ -1,3 +1,5 @@
+[![CI](https://github.com/mahesh-dilip/CarBuyingHelper/actions/workflows/ci.yml/badge.svg)](https://github.com/mahesh-dilip/CarBuyingHelper/actions/workflows/ci.yml)
+
 # CarMind — AI car-buying advisor for the UK
 
 A conversational advisor that helps UK car buyers work out what they can actually afford, then researches the real cost of owning a specific car — purchase price, insurance, tax, fuel and maintenance — and turns it into a month-by-month savings plan.
